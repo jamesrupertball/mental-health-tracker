@@ -2,6 +2,19 @@ import React, { useState, useEffect } from 'react';
 import { supabase } from './supabaseClient';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 
+const VAPID_PUBLIC_KEY = import.meta.env.VITE_VAPID_PUBLIC_KEY;
+
+function urlBase64ToUint8Array(base64String) {
+  const padding = '='.repeat((4 - base64String.length % 4) % 4);
+  const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+  const rawData = window.atob(base64);
+  const outputArray = new Uint8Array(rawData.length);
+  for (let i = 0; i < rawData.length; ++i) {
+    outputArray[i] = rawData.charCodeAt(i);
+  }
+  return outputArray;
+}
+
 export default function App() {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -12,8 +25,27 @@ export default function App() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [authLoading, setAuthLoading] = useState(false);
+  const [notificationsEnabled, setNotificationsEnabled] = useState(false);
+  const [notificationSupported, setNotificationSupported] = useState(false);
 
   const getTodayKey = () => new Date().toISOString().split('T')[0];
+
+  // Register service worker and check notification status
+  useEffect(() => {
+    const checkNotificationSupport = async () => {
+      if ('serviceWorker' in navigator && 'PushManager' in window) {
+        setNotificationSupported(true);
+        try {
+          const registration = await navigator.serviceWorker.register('/sw.js');
+          const subscription = await registration.pushManager.getSubscription();
+          setNotificationsEnabled(!!subscription);
+        } catch (error) {
+          console.error('Service worker registration failed:', error);
+        }
+      }
+    };
+    checkNotificationSupport();
+  }, []);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -51,6 +83,65 @@ export default function App() {
     } catch (error) {
       console.error('Error loading entries:', error);
       alert('Error loading entries: ' + error.message);
+    }
+  };
+
+  const subscribeToNotifications = async () => {
+    try {
+      const permission = await Notification.requestPermission();
+      if (permission !== 'granted') {
+        alert('Notification permission denied');
+        return;
+      }
+
+      const registration = await navigator.serviceWorker.ready;
+      const subscription = await registration.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY)
+      });
+
+      const subscriptionJson = subscription.toJSON();
+
+      // Save to Supabase
+      const { error } = await supabase
+        .from('push_subscriptions')
+        .upsert({
+          user_id: user.id,
+          endpoint: subscriptionJson.endpoint,
+          p256dh: subscriptionJson.keys.p256dh,
+          auth: subscriptionJson.keys.auth
+        }, { onConflict: 'user_id' });
+
+      if (error) throw error;
+
+      setNotificationsEnabled(true);
+      alert('Daily reminders enabled! You\'ll receive a notification at 8 PM if you haven\'t logged.');
+    } catch (error) {
+      console.error('Error subscribing to notifications:', error);
+      alert('Error enabling notifications: ' + error.message);
+    }
+  };
+
+  const unsubscribeFromNotifications = async () => {
+    try {
+      const registration = await navigator.serviceWorker.ready;
+      const subscription = await registration.pushManager.getSubscription();
+
+      if (subscription) {
+        await subscription.unsubscribe();
+      }
+
+      // Remove from Supabase
+      await supabase
+        .from('push_subscriptions')
+        .delete()
+        .eq('user_id', user.id);
+
+      setNotificationsEnabled(false);
+      alert('Daily reminders disabled.');
+    } catch (error) {
+      console.error('Error unsubscribing:', error);
+      alert('Error disabling notifications: ' + error.message);
     }
   };
 
@@ -395,6 +486,26 @@ export default function App() {
           </div>
         ) : (
           <div className="space-y-6">
+            {/* Notification Settings */}
+            {notificationSupported && (
+              <div className="bg-white rounded-xl shadow-lg p-6">
+                <h2 className="text-xl font-bold text-gray-800 mb-4">Daily Reminders</h2>
+                <p className="text-sm text-gray-600 mb-4">
+                  Get a notification at 8 PM if you haven't logged your daily check-in.
+                </p>
+                <button
+                  onClick={notificationsEnabled ? unsubscribeFromNotifications : subscribeToNotifications}
+                  className={`w-full py-3 rounded-lg font-medium transition-all ${
+                    notificationsEnabled
+                      ? 'bg-red-100 text-red-700 hover:bg-red-200'
+                      : 'bg-indigo-600 text-white hover:bg-indigo-700'
+                  }`}
+                >
+                  {notificationsEnabled ? 'Disable Reminders' : 'Enable Reminders'}
+                </button>
+              </div>
+            )}
+
             <div className="bg-white rounded-xl shadow-lg p-6">
               <h2 className="text-xl font-bold text-gray-800 mb-4">Current Streaks</h2>
               <div className="grid grid-cols-2 gap-4">
