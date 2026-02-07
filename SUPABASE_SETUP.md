@@ -210,6 +210,49 @@ VITE_SUPABASE_ANON_KEY=eyJ...your-anon-key...
 - Check that email provider is enabled
 - Ensure anon key is correctly copied to frontend
 
+## Step 7: Schedule Hourly Reminders with pg_cron
+
+The `send-reminders` edge function runs every hour and only notifies users where it's currently 7 PM in their local timezone. To set this up:
+
+1. Enable the `pg_cron` and `pg_net` extensions in Supabase dashboard:
+   - Go to **Database** → **Extensions**
+   - Search for `pg_cron` and enable it
+   - Search for `pg_net` and enable it
+
+2. Run the following SQL in the SQL Editor to create the hourly cron job:
+
+```sql
+-- Schedule the send-reminders edge function to run every hour
+SELECT cron.schedule(
+  'send-daily-reminders',   -- job name
+  '0 * * * *',              -- every hour on the hour
+  $$
+  SELECT net.http_post(
+    url := 'https://YOUR_PROJECT_REF.supabase.co/functions/v1/send-reminders',
+    headers := jsonb_build_object(
+      'Content-Type', 'application/json',
+      'Authorization', 'Bearer YOUR_SERVICE_ROLE_KEY'
+    ),
+    body := '{}'::jsonb
+  ) AS request_id;
+  $$
+);
+```
+
+**IMPORTANT**: Replace `YOUR_PROJECT_REF` and `YOUR_SERVICE_ROLE_KEY` with your actual values from **Project Settings** → **API**.
+
+3. To verify the cron job was created:
+
+```sql
+SELECT * FROM cron.job;
+```
+
+4. To remove the cron job if needed:
+
+```sql
+SELECT cron.unschedule('send-daily-reminders');
+```
+
 ## Next Steps
 
 After Supabase is configured:

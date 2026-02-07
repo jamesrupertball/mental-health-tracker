@@ -56,6 +56,23 @@ function getLocalDate(timezone: string): string {
   }
 }
 
+// Get the current hour (0-23) in a given timezone
+function getLocalHour(timezone: string): number {
+  try {
+    const now = new Date();
+    const formatter = new Intl.DateTimeFormat("en-US", {
+      timeZone: timezone,
+      hour: "numeric",
+      hour12: false,
+    });
+    return parseInt(formatter.format(now), 10);
+  } catch {
+    return -1; // Invalid timezone, skip this user
+  }
+}
+
+const REMINDER_HOUR = 19; // 7 PM local time
+
 serve(async (req) => {
   try {
     // Create Supabase client with service role
@@ -76,9 +93,21 @@ serve(async (req) => {
       });
     }
 
-    // Group subscriptions by their local date so we query entries correctly
+    // Only include users where it's currently 7 PM in their timezone
+    const eligibleSubs: typeof subscriptions = subscriptions.filter(
+      (sub: typeof subscriptions[number]) => getLocalHour(sub.timezone || "UTC") === REMINDER_HOUR
+    );
+
+    if (eligibleSubs.length === 0) {
+      return new Response(
+        JSON.stringify({ message: "No users in the 7 PM hour right now" }),
+        { headers: { "Content-Type": "application/json" } }
+      );
+    }
+
+    // Group eligible subscriptions by their local date so we query entries correctly
     const subsByLocalDate = new Map<string, typeof subscriptions>();
-    for (const sub of subscriptions) {
+    for (const sub of eligibleSubs) {
       const localDate = getLocalDate(sub.timezone || "UTC");
       if (!subsByLocalDate.has(localDate)) {
         subsByLocalDate.set(localDate, []);
