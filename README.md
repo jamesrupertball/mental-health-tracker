@@ -1,7 +1,9 @@
-# Mental Health Tracker - Complete Setup Guide
+# Mental Health Tracker
+
+**Live App**: https://mental-health-tracker-rho.vercel.app
 
 ## Overview
-This project is a simple, mobile-friendly mental health tracking application that allows users to log daily wellness indicators (exercise, healthy eating, outdoor time, sleep quality, social interaction) along with a mood score and optional notes.
+A simple, mobile-friendly mental health tracking application that allows users to log daily wellness indicators (exercise, healthy eating, outdoor time, sleep quality, social interaction) along with a mood score and optional notes.
 
 ## Key Features
 - 🔐 User authentication (email/password)
@@ -18,8 +20,7 @@ This project is a simple, mobile-friendly mental health tracking application tha
 - **Frontend**: React + Vite + Tailwind CSS
 - **Charts**: Recharts
 - **Backend**: Supabase (PostgreSQL + Auth)
-- **Hosting**: GitHub Pages
-- **Deployment**: gh-pages package
+- **Hosting**: Vercel
 
 ## Setup Instructions
 
@@ -136,8 +137,8 @@ npm run build
 # Preview production build
 npm run preview
 
-# Deploy to GitHub Pages
-npm run deploy
+# Deploy to Vercel
+npx vercel --prod
 ```
 
 ## Security Features
