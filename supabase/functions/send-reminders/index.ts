@@ -38,18 +38,33 @@ async function sendWebPush(
   }
 }
 
+// Get the local date string (YYYY-MM-DD) for a given timezone
+function getLocalDate(timezone: string): string {
+  try {
+    const now = new Date();
+    const formatter = new Intl.DateTimeFormat("en-CA", {
+      timeZone: timezone,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    });
+    // en-CA locale formats as YYYY-MM-DD
+    return formatter.format(now);
+  } catch {
+    // Fallback to UTC if timezone is invalid
+    return new Date().toISOString().split("T")[0];
+  }
+}
+
 serve(async (req) => {
   try {
     // Create Supabase client with service role
     const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
-    // Get today's date in UTC
-    const today = new Date().toISOString().split("T")[0];
-
-    // Get all users with push subscriptions who haven't logged today
+    // Get all users with push subscriptions (including their timezone)
     const { data: subscriptions, error: subError } = await supabase
       .from("push_subscriptions")
-      .select("user_id, endpoint, p256dh, auth");
+      .select("user_id, endpoint, p256dh, auth, timezone");
 
     if (subError) {
       throw subError;
@@ -61,22 +76,34 @@ serve(async (req) => {
       });
     }
 
-    // Get today's entries
-    const { data: todayEntries, error: entriesError } = await supabase
-      .from("entries")
-      .select("user_id")
-      .eq("date", today);
-
-    if (entriesError) {
-      throw entriesError;
+    // Group subscriptions by their local date so we query entries correctly
+    const subsByLocalDate = new Map<string, typeof subscriptions>();
+    for (const sub of subscriptions) {
+      const localDate = getLocalDate(sub.timezone || "UTC");
+      if (!subsByLocalDate.has(localDate)) {
+        subsByLocalDate.set(localDate, []);
+      }
+      subsByLocalDate.get(localDate)!.push(sub);
     }
 
-    const usersWithEntries = new Set(todayEntries?.map((e) => e.user_id) || []);
+    // For each local date, find users who have already logged
+    const usersToNotify: typeof subscriptions = [];
+    for (const [localDate, subs] of subsByLocalDate) {
+      const userIds = subs.map((s) => s.user_id);
+      const { data: todayEntries, error: entriesError } = await supabase
+        .from("entries")
+        .select("user_id")
+        .eq("date", localDate)
+        .in("user_id", userIds);
 
-    // Filter to users who haven't logged today
-    const usersToNotify = subscriptions.filter(
-      (sub) => !usersWithEntries.has(sub.user_id)
-    );
+      if (entriesError) {
+        throw entriesError;
+      }
+
+      const usersWithEntries = new Set(todayEntries?.map((e) => e.user_id) || []);
+      const unloggedUsers = subs.filter((sub) => !usersWithEntries.has(sub.user_id));
+      usersToNotify.push(...unloggedUsers);
+    }
 
     console.log(`Sending reminders to ${usersToNotify.length} users`);
 

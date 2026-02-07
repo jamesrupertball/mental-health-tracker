@@ -28,7 +28,12 @@ export default function App() {
   const [notificationsEnabled, setNotificationsEnabled] = useState(false);
   const [notificationSupported, setNotificationSupported] = useState(false);
 
-  const getTodayKey = () => new Date().toISOString().split('T')[0];
+  const getLocalDateKey = (date = new Date()) => {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  };
 
   // Register service worker and check notification status
   useEffect(() => {
@@ -77,7 +82,7 @@ export default function App() {
 
       setEntries(data || []);
 
-      const today = getTodayKey();
+      const today = getLocalDateKey();
       const todayData = data?.find(e => e.date === today);
       setTodayEntry(todayData || null);
     } catch (error) {
@@ -102,20 +107,21 @@ export default function App() {
 
       const subscriptionJson = subscription.toJSON();
 
-      // Save to Supabase
+      // Save to Supabase (include user's timezone for server-side date matching)
       const { error } = await supabase
         .from('push_subscriptions')
         .upsert({
           user_id: user.id,
           endpoint: subscriptionJson.endpoint,
           p256dh: subscriptionJson.keys.p256dh,
-          auth: subscriptionJson.keys.auth
+          auth: subscriptionJson.keys.auth,
+          timezone: Intl.DateTimeFormat().resolvedOptions().timeZone
         }, { onConflict: 'user_id' });
 
       if (error) throw error;
 
       setNotificationsEnabled(true);
-      alert('Daily reminders enabled! You\'ll receive a notification at 8 PM if you haven\'t logged.');
+      alert('Daily reminders enabled! You\'ll receive a notification at 7 PM if you haven\'t logged.');
     } catch (error) {
       console.error('Error subscribing to notifications:', error);
       alert('Error enabling notifications: ' + error.message);
@@ -211,7 +217,7 @@ export default function App() {
   };
 
   const handleSubmit = async () => {
-    const today = getTodayKey();
+    const today = getLocalDateKey();
     const entry = {
       user_id: user.id,
       date: today,
@@ -250,7 +256,7 @@ export default function App() {
 
   const getStreak = (field) => {
     let streak = 0;
-    const sortedEntries = [...entries].sort((a, b) => new Date(b.date) - new Date(a.date));
+    const sortedEntries = [...entries].sort((a, b) => new Date(b.date + 'T00:00:00') - new Date(a.date + 'T00:00:00'));
 
     for (const entry of sortedEntries) {
       if (entry[field] === true) {
@@ -491,7 +497,7 @@ export default function App() {
               <div className="bg-white rounded-xl shadow-lg p-6">
                 <h2 className="text-xl font-bold text-gray-800 mb-4">Daily Reminders</h2>
                 <p className="text-sm text-gray-600 mb-4">
-                  Get a notification at 8 PM if you haven't logged your daily check-in.
+                  Get a notification at 7 PM if you haven't logged your daily check-in.
                 </p>
                 <button
                   onClick={notificationsEnabled ? unsubscribeFromNotifications : subscribeToNotifications}
@@ -537,13 +543,13 @@ export default function App() {
                     <XAxis
                       dataKey="date"
                       tickFormatter={(date) => {
-                        const d = new Date(date);
+                        const d = new Date(date + 'T00:00:00');
                         return `${d.getMonth()+1}/${d.getDate()}`;
                       }}
                     />
                     <YAxis domain={[0, 5]} ticks={[1, 2, 3, 4, 5]} />
                     <Tooltip
-                      labelFormatter={(date) => new Date(date).toLocaleDateString()}
+                      labelFormatter={(date) => new Date(date + 'T00:00:00').toLocaleDateString()}
                     />
                     <Line
                       type="monotone"
@@ -564,7 +570,7 @@ export default function App() {
                   <div key={entry.id} className="border-l-4 border-indigo-500 pl-4 py-2">
                     <div className="flex justify-between items-center mb-1">
                       <div className="font-medium text-gray-800">
-                        {new Date(entry.date).toLocaleDateString('en-US', {
+                        {new Date(entry.date + 'T00:00:00').toLocaleDateString('en-US', {
                           weekday: 'short',
                           month: 'short',
                           day: 'numeric'

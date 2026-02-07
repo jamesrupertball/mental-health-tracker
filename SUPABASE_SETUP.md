@@ -70,6 +70,37 @@ CREATE POLICY "Users can delete own entries"
     FOR DELETE
     USING (auth.uid() = user_id);
 
+-- Create push_subscriptions table for daily reminder notifications
+CREATE TABLE public.push_subscriptions (
+    id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+    user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE NOT NULL UNIQUE,
+    endpoint TEXT NOT NULL,
+    p256dh TEXT NOT NULL,
+    auth TEXT NOT NULL,
+    timezone TEXT NOT NULL DEFAULT 'UTC',
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL
+);
+
+-- Enable RLS on push_subscriptions
+ALTER TABLE public.push_subscriptions ENABLE ROW LEVEL SECURITY;
+
+-- Users can manage their own push subscriptions
+CREATE POLICY "Users can view own subscriptions"
+    ON public.push_subscriptions FOR SELECT
+    USING (auth.uid() = user_id);
+
+CREATE POLICY "Users can insert own subscriptions"
+    ON public.push_subscriptions FOR INSERT
+    WITH CHECK (auth.uid() = user_id);
+
+CREATE POLICY "Users can update own subscriptions"
+    ON public.push_subscriptions FOR UPDATE
+    USING (auth.uid() = user_id);
+
+CREATE POLICY "Users can delete own subscriptions"
+    ON public.push_subscriptions FOR DELETE
+    USING (auth.uid() = user_id);
+
 -- Create function to update updated_at timestamp
 CREATE OR REPLACE FUNCTION public.handle_updated_at()
 RETURNS TRIGGER AS $$
